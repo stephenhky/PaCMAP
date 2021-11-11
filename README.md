@@ -1,9 +1,36 @@
 # PaCMAP
 
+**Our work has been published at the Journal of Machine Learning Research(JMLR)!**
+
 PaCMAP (Pairwise Controlled Manifold Approximation) is a dimensionality reduction method that can be used for visualization, preserving both local and global structure of the data in original space. PaCMAP optimizes the low dimensional embedding using three kinds of pairs of points: neighbor pairs (pair_neighbors), mid-near pair (pair_MN), and further pairs (pair_FP).
 
-Previous dimensionality reduction techniques focus on either local structure (e.g. t-SNE, LargeVis and UMAP) or global structure (e.g. TriMAP), but not both, although with carefully tuning the parameter in their algorithms that controls the balance between global and local structure, which mainly adjusts the number of considered neighbors. Instead of considering more neighbors to attract for preserving glocal structure, PaCMAP dynamically uses a special group of pairs -- mid-near pairs, to first capture global structure and then refine local structure, which both preserve global and local structure. For a thorough background and discussion on this work, please read [the paper](#TODO)
+Previous dimensionality reduction techniques focus on either local structure (e.g. t-SNE, LargeVis and UMAP) or global structure (e.g. TriMAP), but not both, although with carefully tuning the parameter in their algorithms that controls the balance between global and local structure, which mainly adjusts the number of considered neighbors. Instead of considering more neighbors to attract for preserving glocal structure, PaCMAP dynamically uses a special group of pairs -- mid-near pairs, to first capture global structure and then refine local structure, which both preserve global and local structure. For a thorough background and discussion on this work, please read [our paper](https://jmlr.org/papers/v22/20-1061.html).
 
+# Release Notes
+- 0.5.0
+  
+  Now support setting `random_state` when creating `pacmap.PaCMAP` instances for better reproducibility.
+
+  Fix the default initialization to `PCA` to resolve inconsistency between code and description.
+
+  **Setting the `random_state` will affect the numpy random seed in your local environment. However, you may still get different results even if the `random_state` parameter is set to be the same. This is because numba parallelization makes some of the functions undeterministic.** That being said, fixing the random state will always give you the same set of pairs and initialization, which ensure the difference is minimal.
+- 0.4.1
+
+  Now the default value for `n_neighbors` is 10. To enable automatic parameter selection, please set it to `None`.
+- 0.4
+  
+  Now supports user-specified nearest neighbor pairs. See section `How to use user-specified nearest neighbor` below.
+
+  The `fit` function and the `fit_transform` function now has an extra parameter `save_pairs` that decides whether the pairs sampled in this run will be saved to save time for reproducing experiments with other hyperparameters (default to `True`). 
+- 0.3
+  
+  Now supports user-specified matrix as initialization through `init` parameter. The matrix must be an numpy ndarray with the shape (N, 2).
+- 0.2
+  
+  Adding adaptive default value for `n_neighbors`: for large datasets with sample size N > 10000, the default value will be set to 10 + 15 * (log10(N) - 4), rounding to the nearest integer.
+- 0.1
+
+  Initial Release
 # Installation
 You would require the following packages to fully use pacmap on your machine:
 - numpy
@@ -11,7 +38,14 @@ You would require the following packages to fully use pacmap on your machine:
 - annoy
 - numba
 
-You can use the following command to install these dependencies using pip:
+You can use pip to install pacmap from PyPI. It will automatically install the dependencies for you:
+
+```
+pip install pacmap
+```
+
+
+Alternatively, you can use the following command to install these dependencies:
 ```
 pip install numpy
 pip install scikit-learn
@@ -19,13 +53,8 @@ pip install annoy
 pip install numba
 ```
 
-To install PaCMAP, you can use pip:
-
-```
-pip install pacmap
-```
 # Usage
-The `pacmap` package is designed to be compatible with `scikit-learn`, meaning that it has a similar interface with functions in the `sklearn.manifold` module. To run `pacmap` on your own dataset, you should install the package following the instructions in [this paragraph](#installation), and then import the module. The following code clip includes a use case about how to use pacmap on the [COIL-20](https://www.cs.columbia.edu/CAVE/software/softlib/coil-20.php) dataset:
+The `pacmap` package is designed to be compatible with `scikit-learn`, meaning that it has a similar interface with functions in the `sklearn.manifold` module. To run `pacmap` on your own dataset, you should install the package following the instructions in [this paragraph](#installation), and then import the module. The following code clip includes a use case about how to use PaCMAP on the [COIL-20](https://www.cs.columbia.edu/CAVE/software/softlib/coil-20.php) dataset:
 
 ```
 import pacmap
@@ -41,7 +70,7 @@ y = np.load("./data/coil_20_labels.npy", allow_pickle=True)
 
 # initializing the pacmap instance
 # Setting n_neighbors to "None" leads to a default choice shown below in "parameter" section
-embedding = pacmap.PaCMAP(n_dims=2, n_neighbors=10, MN_ratio=0.5, FP_ratio=2.0) 
+embedding = pacmap.PaCMAP(n_dims=2, n_neighbors=None, MN_ratio=0.5, FP_ratio=2.0) 
 
 # fit the data (The index of transformed data corresponds to the index of the original data)
 X_transformed = embedding.fit_transform(X, init="pca")
@@ -75,7 +104,7 @@ The list of the most important parameters is given below. Changing these values 
 - `FP_ratio`: the ratio of the number of further pairs to the number of neighbors, `n_FP` = <img src="https://latex.codecogs.com/gif.latex?\lfloor" title="\lfloor" /> `n_neighbors * FP_ratio` <img src="https://latex.codecogs.com/gif.latex?\rfloor" title="\rfloor" />  Default to 2.
 
 The initialization is also important to the result, but it's a parameter of the `fit` and `fit_transform` function.
-- `init`: the initialization of the lower dimensional embedding. One of `"pca"` or `"random"`. Default to `"pca"`.
+- `init`: the initialization of the lower dimensional embedding. One of `"pca"` or `"random"`, or a user-provided numpy ndarray with the shape (N, 2). Default to `"random"`.
 
 Other parameters include:
 - `num_iters`: number of iterations. Default to 450. 450 iterations is enough for most dataset to converge.
@@ -84,6 +113,60 @@ Other parameters include:
 - `lr`: learning rate of the AdaGrad optimizer. Default to 1.
 - `apply_pca`: whether pacmap should apply PCA to the data before constructing the k-Nearest Neighbor graph. Using PCA to preprocess the data can largely accelerate the DR process without losing too much accuracy. Notice that this option does not affect the initialization of the optimization process.
 - `intermediate`: whether pacmap should also output the intermediate stages of the optimization process of the lower dimension embedding. If `True`, then the output will be a numpy array of the size (n, `n_dims`, 13), where each slice is a "screenshot" of the output embedding at a particular number of steps, from [0, 10, 30, 60, 100, 120, 140, 170, 200, 250, 300, 350, 450].
+
+# How to use user-specified nearest neighbor
+In version 0.4, we have provided a new option to allow users to use their own nearest neighbors when mapping large-scale
+datasets. The following code clip includes a use case about how to use PaCMAP with the user-specified nearest neighbors:
+
+```
+import pacmap
+import numpy as np
+import matplotlib.pyplot as plt
+from annoy import AnnoyIndex
+
+# loading preprocessed coil_20 dataset
+X = np.load("./data/coil_20.npy", allow_pickle=True)
+X = X.reshape(X.shape[0], -1)
+y = np.load("./data/coil_20_labels.npy", allow_pickle=True)
+
+# create nearest neighbor pairs
+# here we use AnnoyIndex as an example, but the process can be done by any
+# external NN library that provides neighbors into a matrix of the shape
+# (n, n_neighbors_extra), where n_neighbors_extra is greater or equal to
+# n_neighbors in the following example.
+
+n, dim = X.shape
+n_neighbors = 10
+tree = AnnoyIndex(dim, metric='euclidean')
+for i in range(n):
+    tree.add_item(i, X[i, :])
+tree.build(20)
+
+nbrs = np.zeros((n, 20), dtype=np.int32)
+for i in range(n):
+    nbrs_ = tree.get_nns_by_item(i, 20 + 1) # The first nbr is always the point itself
+    nbrs[i, :] = nbrs_[1:]
+
+scaled_dist = np.ones((n, n_neighbors)) # No scaling is needed
+
+# Type casting is needed for numba acceleration
+X = X.astype(np.float32)
+scaled_dist = scaled_dist.astype(np.float32)
+
+# make sure n_neighbors is the same number you want when fitting the data
+pair_neighbors = pacmap.sample_neighbors_pair(X, scaled_dist, nbrs, np.int32(n_neighbors))
+
+# initializing the pacmap instance
+# feed the pair_neighbors into the instance
+embedding = pacmap.PaCMAP(n_dims=2, n_neighbors=n_neighbors, MN_ratio=0.5, FP_ratio=2.0, pair_neighbors=pair_neighbors) 
+
+# fit the data (The index of transformed data corresponds to the index of the original data)
+X_transformed = embedding.fit_transform(X, init="pca")
+
+# visualize the embedding
+fig, ax = plt.subplots(1, 1, figsize=(6, 6))
+ax.scatter(X_transformed[:, 0], X_transformed[:, 1], cmap="Spectral", c=y, s=0.6)
+```
 
 
 
@@ -96,16 +179,18 @@ We have provided the code we use to run experiment for better reproducibility. T
 After downloading the code, you may need to specify some of the paths in the script to make them fully functional.
 
 # Citation
-If you use PaCMAP in your publication, or you used the implementation in this repository, please cite our preprint here:
+If you use PaCMAP in your publication, or you used the implementation in this repository, please cite our paper using the following bibtex:
 
 ```
-@misc{wang2020understanding,
-      title={Understanding How Dimension Reduction Tools Work: An Empirical Approach to Deciphering t-SNE, UMAP, TriMAP, and PaCMAP for Data Visualization}, 
-      author={Yingfan Wang and Haiyang Huang and Cynthia Rudin and Yaron Shaposhnik},
-      year={2020},
-      eprint={2012.04456},
-      archivePrefix={arXiv},
-      primaryClass={cs.LG}
+@article{JMLR:v22:20-1061,
+  author  = {Yingfan Wang and Haiyang Huang and Cynthia Rudin and Yaron Shaposhnik},
+  title   = {Understanding How Dimension Reduction Tools Work: An Empirical Approach to Deciphering t-SNE, UMAP, TriMap, and PaCMAP for Data Visualization},
+  journal = {Journal of Machine Learning Research},
+  year    = {2021},
+  volume  = {22},
+  number  = {201},
+  pages   = {1-73},
+  url     = {http://jmlr.org/papers/v22/20-1061.html}
 }
 ```
 
